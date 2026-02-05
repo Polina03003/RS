@@ -1,4 +1,5 @@
 // app.js (ES module version using transformers.js for local sentiment classification)
+const LOG_URL = "https://script.google.com/macros/s/AKfycbyxeJW6CYZhU_hD73boZy1UE_C1JqGrxfH3ONV0ELHuAERCxPpq5Qf4liLeFlYpRTGLYQ/exec";
 
 import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6/dist/transformers.min.js";
 
@@ -6,6 +7,34 @@ import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers
 let reviews = [];
 let apiToken = ""; // kept for UI compatibility, but not used with local inference
 let sentimentPipeline = null; // transformers.js text-classification pipeline
+
+/**
+ * Log a single row to Google Sheet:
+ * ts_iso | review | sentiment_with_confidence | meta
+ *
+ * NOTE: Uses mode: "no-cors" so request is not blocked on GitHub Pages.
+ */
+function logToSheet({ review, label, score, meta }) {
+  const sentimentWithConfidence =
+    (label ? String(label).toUpperCase() : "NEUTRAL") +
+    " (" +
+    (typeof score === "number" ? (score * 100).toFixed(1) : "0.0") +
+    "%)";
+
+  const payload = {
+    ts_iso: new Date().toISOString(),
+    review: review || "",
+    sentiment_with_confidence: sentimentWithConfidence,
+    meta: meta || {}
+  };
+
+  fetch(LOG_URL, {
+    method: "POST",
+    mode: "no-cors",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).catch(() => {});
+}
 
 // DOM elements
 const analyzeBtn = document.getElementById("analyze-btn");
@@ -43,8 +72,6 @@ async function initSentimentModel() {
       statusElement.textContent = "Loading sentiment model...";
     }
 
-    // Use a transformers.js-supported text-classification model.
-    // Xenova/distilbert-base-uncased-finetuned-sst-2-english is a common choice.
     sentimentPipeline = await pipeline(
       "text-classification",
       "Xenova/distilbert-base-uncased-finetuned-sst-2-english"
@@ -119,8 +146,7 @@ function analyzeRandomReview() {
     return;
   }
 
-  const selectedReview =
-    reviews[Math.floor(Math.random() * reviews.length)];
+  const selectedReview = reviews[Math.floor(Math.random() * reviews.length)];
 
   // Display the review
   reviewText.textContent = selectedReview;
@@ -131,9 +157,27 @@ function analyzeRandomReview() {
   sentimentResult.innerHTML = ""; // Reset previous result
   sentimentResult.className = "sentiment-result"; // Reset classes
 
-  // Call local sentiment model (transformers.js)
   analyzeSentiment(selectedReview)
-    .then((result) => displaySentiment(result))
+    .then((result) => {
+      // 1) Update UI
+      const parsed = displaySentiment(result);
+
+      // 2) Log to Google Sheet
+      logToSheet({
+        review: selectedReview,
+        label: parsed.label,
+        score: parsed.score,
+        meta: {
+          page: location.href,
+          referrer: document.referrer || "",
+          userAgent: navigator.userAgent,
+          language: navigator.language,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          // token не логируем (безопасность)
+          model: "Xenova/distilbert-base-uncased-finetuned-sst-2-english"
+        }
+      });
+    })
     .catch((error) => {
       console.error("Error:", error);
       showError(error.message || "Failed to analyze sentiment.");
@@ -150,8 +194,6 @@ async function analyzeSentiment(text) {
     throw new Error("Sentiment model is not initialized.");
   }
 
-  // transformers.js text-classification pipeline returns:
-  // [{ label: 'POSITIVE', score: 0.99 }, ...]
   const output = await sentimentPipeline(text);
 
   if (!Array.isArray(output) || output.length === 0) {
@@ -163,13 +205,12 @@ async function analyzeSentiment(text) {
 }
 
 // Display sentiment result
+// ✅ IMPORTANT: now returns { label, score, sentiment } so caller can log
 function displaySentiment(result) {
-  // Default to neutral if we can't parse the result
   let sentiment = "neutral";
   let score = 0.5;
   let label = "NEUTRAL";
 
-  // Expected format: [[{label: 'POSITIVE', score: 0.99}]]
   if (
     Array.isArray(result) &&
     result.length > 0 &&
@@ -188,7 +229,6 @@ function displaySentiment(result) {
           ? sentimentData.score
           : 0.5;
 
-      // Determine sentiment bucket
       if (label === "POSITIVE" && score > 0.5) {
         sentiment = "positive";
       } else if (label === "NEGATIVE" && score > 0.5) {
@@ -199,12 +239,13 @@ function displaySentiment(result) {
     }
   }
 
-  // Update UI
   sentimentResult.classList.add(sentiment);
   sentimentResult.innerHTML = `
-        <i class="fas ${getSentimentIcon(sentiment)} icon"></i>
-        <span>${label} (${(score * 100).toFixed(1)}% confidence)</span>
-    `;
+    <i class="fas ${getSentimentIcon(sentiment)} icon"></i>
+    <span>${label} (${(score * 100).toFixed(1)}% confidence)</span>
+  `;
+
+  return { label, score, sentiment };
 }
 
 // Get appropriate icon for sentiment bucket
