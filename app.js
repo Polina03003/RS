@@ -21,20 +21,19 @@ function logToSheet({ review, label, score, meta }) {
     (typeof score === "number" ? (score * 100).toFixed(1) : "0.0") +
     "%)";
 
-  const payload = {
-    ts_iso: new Date().toISOString(),
-    review: review || "",
-    sentiment_with_confidence: sentimentWithConfidence,
-    meta: meta || {}
-  };
+  const params = new URLSearchParams();
+  params.set("ts_iso", new Date().toISOString());
+  params.set("review", review || "");
+  params.set("sentiment_with_confidence", sentimentWithConfidence);
+  params.set("meta", JSON.stringify(meta || {}));
 
   fetch(LOG_URL, {
     method: "POST",
     mode: "no-cors",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: params, // <-- важно: теперь это x-www-form-urlencoded
   }).catch(() => {});
 }
+
 
 // DOM elements
 const analyzeBtn = document.getElementById("analyze-btn");
