@@ -1,5 +1,5 @@
 // app.js (ES module version using transformers.js for local sentiment classification)
-const LOG_URL = "https://script.google.com/macros/s/AKfycbyxeJW6CYZhU_hD73boZy1UE_C1JqGrxfH3ONV0ELHuAERCxPpq5Qf4liLeFlYpRTGLYQ/exec";
+const LOG_URL = "https://script.google.com/macros/s/AKfycbwq9nQxoDipA9ZfP1hnhyFE6t5mIMvErRd4lYncuISlXbCNhAWmGGeUifmIGZoZNZKWug/exec";
 
 import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6/dist/transformers.min.js";
 
